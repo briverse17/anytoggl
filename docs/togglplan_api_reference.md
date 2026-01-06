@@ -1,445 +1,477 @@
-# Toggl Plan API Reference
+# Toggl Plan API v5 Reference
 
-> **Source:** [Toggl Plan API Documentation](https://developers.plan.toggl.com/api-v5.html)  
-> **API Version:** v5  
-> **Base URL:** `https://api.plan.toggl.com/api/v5`
+This document provides a comprehensive reference for the Toggl Plan API v5, including authentication, endpoints, and practical implementation notes based on real-world testing.
 
-This document summarizes all available endpoints in the Toggl Plan API. The API enables interaction with Toggl Plan's resources including tasks, projects, milestones, members, groups, and user profiles.
+## Base URL
 
----
-
-## Overview
-
-### API Format
-- **Content-Type:** `application/json`
-- **Date Format:** ISO 8601 (YYYY-MM-DD)
-- **DateTime Format:** ISO 8601 (YYYY-MM-DDTHH:MM:SSZ)
-- **Timestamp Format:** ISO 8601 (YYYY-MM-DDTHH:MM:SS.000Z)
-- **Protocol:** HTTPS only
-
-### General Principles
-- All API access is over HTTPS from `api.plan.toggl.com/api/v5`
-- All data is sent and received as JSON
-- All dates are in ISO 8601 format
-- For GET requests, parameters can be passed as query strings
-- For POST, PUT, DELETE requests, parameters should be in request body
-
----
+```
+https://api.plan.toggl.com/api/v5
+```
 
 ## Authentication
 
-Toggl Plan uses **OAuth 2.0** for authentication and authorization.
+Toggl Plan API v5 uses OAuth 2.0 for authentication. Two grant types are supported:
 
-### OAuth 2.0 Methods
+### 1. Authorization Code Grant
 
-#### 1. Authorization Code Grant (Web Application Flow)
+**Use case:** Web applications where users authorize access through a browser.
 
-**Step 1: Redirect users to request access**
+**Flow:**
+1. Redirect user to authorization URL
+2. User authorizes the application
+3. Receive authorization code via callback
+4. Exchange code for access token
 
-```bash
-GET https://plan.toggl.com/oauth/login
+**Authorization URL:**
+```
+https://api.plan.toggl.com/api/v5/authorize
 ```
 
 **Parameters:**
-| Name | Type | Description |
-|------|------|-------------|
-| `response_type` | string | Required. Must be "code" |
-| `client_id` | string | Required. Your App Key from Toggl Plan |
-| `redirect_uri` | string | URL where users will be sent after authorization |
-| `state` | string | Unguessable random string for CSRF protection |
+- `client_id`: Your application's client ID
+- `redirect_uri`: Callback URL
+- `response_type`: Set to `code`
+- `state`: Optional CSRF token
 
-**Step 2: Exchange code for access token**
+**Token Exchange:**
+```http
+POST /api/v5/authenticate/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic {base64(client_id:client_secret)}
 
-```bash
-POST https://api.plan.toggl.com/api/v5/authenticate/token
-Authorization: Basic Base64(CLIENT-ID:CLIENT-SECRET)
+grant_type=authorization_code&code={authorization_code}&redirect_uri={redirect_uri}
 ```
 
-**Parameters:**
-| Name | Type | Description |
-|------|------|-------------|
-| `grant_type` | string | Required. Must be "authorization_code" |
-| `code` | string | Required. Code from Step 1 |
-| `client_id` | string | Required. Your App Key |
+### 2. Resource Owner Password Credentials Grant
+
+**Use case:** Server-to-server applications, CLI tools, trusted applications.
+
+**Token Request:**
+```http
+POST /api/v5/authenticate/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic {base64(client_id:client_secret)}
+
+grant_type=password&username={user_email}&password={user_password}
+```
 
 **Response:**
 ```json
 {
-  "access_token": "e72e16c7e42f292c6912e7710c838347ae178b4a",
-  "refresh_token": "2c6912e7710c838347ae178b4ae72e16c7e42f292",
-  "expires_in": 3600,
-  "token_type": "bearer"
+  "access_token": "your_access_token",
+  "refresh_token": "your_refresh_token",
+  "token_type": "Bearer",
+  "expires_in": 7776000
 }
 ```
 
-#### 2. Resource Owner Password Credentials Grant
+**Notes:**
+- Access tokens expire in 90 days (7,776,000 seconds)
+- Store both access_token and refresh_token
+- Use refresh_token to obtain new access_token when expired
 
-For trusted applications that can securely store credentials.
+### 3. Token Refresh
+
+```http
+POST /api/v5/authenticate/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic {base64(client_id:client_secret)}
+
+grant_type=refresh_token&refresh_token={refresh_token}
+```
 
 ### Using Access Tokens
 
-**In Header (Recommended):**
-```bash
-curl "https://api.plan.toggl.com/api/v5/me" \
-  -H "Authorization: Bearer OAUTH-TOKEN"
+Include the access token in the Authorization header for all API requests:
+
+```http
+Authorization: Bearer {access_token}
 ```
 
-**As Query Parameter:**
-```bash
-curl "https://api.plan.toggl.com/api/v5/me?access_token=OAUTH-TOKEN"
+## User Profile
+
+### Get Current User
+
+```http
+GET /api/v5/me
 ```
 
-### Refreshing Access Tokens
+**Response:**
+```json
+{
+  "id": 7509708,
+  "name": "User Name",
+  "email": "user@example.com",
+  "workspace_id": 960111,
+  ...
+}
+```
 
-When access token expires, use the refresh token to obtain a new one.
+**Use case:** Retrieve user_id required for task creation.
 
----
+## Projects
 
-## API Quota & Rate Limits
+### List Projects
 
-Toggl Plan implements API quotas to ensure service stability and fair usage across all users.
+```http
+GET /api/v5/{workspace_id}/projects
+```
 
-### Quota System
+**Response:**
+```json
+[
+  {
+    "id": 4393294,
+    "name": "Project Name",
+    "color_id": 1,
+    "workspace_id": 960111,
+    ...
+  }
+]
+```
 
-The API uses a **sliding window** quota system that tracks requests over a 60-minute period. The quota is applied per user per workspace.
+### Create Project
 
-### Quota Limits by Plan
+```http
+POST /api/v5/{workspace_id}/projects
+Content-Type: application/json
 
-**Workspace-specific requests** (endpoints with `{workspace_id}`):
+{
+  "name": "Project Name",
+  "color_id": 1
+}
+```
 
-| Plan | Requests per Hour (per user, per workspace) |
-|------|---------------------------------------------|
-| Free | 30 |
-| Starter | 240 |
-| Premium | 600 |
-| Enterprise | Custom (contact Toggl) |
+## Tasks
 
-**User-specific requests** (e.g., `/api/v5/me`):
-- 30 requests/hour per user (all plans)
+### List Tasks
 
-### Monitoring Quota Usage
+```http
+GET /api/v5/{workspace_id}/tasks
+```
 
-While Toggl Plan's official documentation doesn't specify quota headers, based on Toggl's ecosystem patterns, you should monitor response headers:
+**Optional Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `since` | ISO 8601 date | Filter tasks after this date |
+| `before` | ISO 8601 date | Filter tasks before this date |
 
-| Header | Description |
-|--------|-------------|
-| `X-Toggl-Quota-Remaining` | Requests remaining in current window (if available) |
-| `X-Toggl-Quota-Resets-In` | Seconds until window resets (if available) |
+**Response:**
+```json
+[
+  {
+    "id": 52659484,
+    "name": "Task Name",
+    "notes": "Task description",
+    "start_date": "2026-01-07",
+    "end_date": "2026-01-08",
+    "start_time": "08:00",
+    "end_time": "09:00",
+    "user_id": 7509708,
+    "project_id": 4393294,
+    "estimated_minutes": 60,
+    "status": "to-do",
+    "created_at": "2026-01-06T19:18:00Z",
+    "updated_at": "2026-01-06T19:18:00Z",
+    ...
+  }
+]
+```
 
-### Rate Limit Responses
+### Create Task
 
-When quota is exceeded, the API will respond with:
+```http
+POST /api/v5/{workspace_id}/tasks
+Content-Type: application/json
 
-| Code | Description | Action |
-|------|-------------|--------|
-| `402` | Payment Required / Quota Exceeded | Wait for quota reset or upgrade plan |
-| `429` | Too Many Requests | Implement exponential backoff |
+{
+  "name": "Task Name",
+  "notes": "Task description\n\n#anytype_id:bafyreiabc123",
+  "start_date": "2026-01-07",
+  "end_date": "2026-01-08",
+  "start_time": "08:00",
+  "end_time": "09:00",
+  "user_id": 7509708,
+  "project_id": 4393294,
+  "estimated_minutes": 60
+}
+```
 
-### Best Practices
+**Required Fields:**
+- `name`: Task name
+- `start_date`: Start date (YYYY-MM-DD format)
+- `end_date`: End date (YYYY-MM-DD format)
+- `user_id`: User ID (required - task must be assigned to a user OR have a folder_id)
 
-1. **Implement Retry Logic**: Use exponential backoff when receiving 429 responses
-2. **Cache Responses**: Store frequently accessed data locally to reduce API calls
-3. **Batch Operations**: Group related operations when possible
-4. **Monitor Usage**: Track your API consumption to stay within limits
-5. **Safe Rate**: Aim for **1 request per second** as a safe baseline
+**Optional Fields:**
+- `notes`: Task description/notes
+- `start_time`: Daily start time (HH:MM format, e.g., "08:00")
+- `end_time`: Daily end time (HH:MM format, e.g., "09:00")
+- `project_id`: Project ID for grouping
+- `estimated_minutes`: Time estimate in minutes (e.g., 60 for 1 hour)
+- `folder_id`: Folder ID (alternative to user_id)
 
-### Example: Handling Rate Limits in Python
+**Response:**
+```json
+{
+  "id": 52659484,
+  "name": "Task Name",
+  "notes": "Task description\n\n#anytype_id:bafyreiabc123",
+  "start_date": "2026-01-07",
+  "end_date": "2026-01-08",
+  "start_time": "08:00",
+  "end_time": "09:00",
+  "user_id": 7509708,
+  "project_id": 4393294,
+  "estimated_minutes": 60,
+  "status": "to-do",
+  "created_at": "2026-01-06T19:18:00Z",
+  "updated_at": "2026-01-06T19:18:00Z",
+  ...
+}
+```
+
+### Update Task
+
+```http
+PUT /api/v5/{workspace_id}/tasks/{task_id}
+Content-Type: application/json
+
+{
+  "name": "Updated Task Name",
+  "notes": "Updated description\n\n#anytype_id:bafyreiabc123",
+  "start_date": "2026-01-08",
+  "end_date": "2026-01-09"
+}
+```
+
+### Delete Task
+
+```http
+DELETE /api/v5/{workspace_id}/tasks/{task_id}
+```
+
+### Task Fields
+
+| Field | Type | Description | Notes |
+|-------|------|-------------|-------|
+| `id` | integer | Task ID | Read-only |
+| `name` | string | Task name | Required |
+| `notes` | string | Task notes/description | Use for descriptions and metadata |
+| `start_date` | string | Start date (YYYY-MM-DD) | Required |
+| `end_date` | string | End date (YYYY-MM-DD) | Required |
+| `start_time` | string | Start time (HH:MM) | Daily time window start |
+| `end_time` | string | End time (HH:MM) | Daily time window end |
+| `user_id` | integer | Assigned user ID | Required (or folder_id) |
+| `project_id` | integer | Project ID | Optional grouping |
+| `estimated_minutes` | integer | Estimated minutes | Works (e.g., 60 = 1 hour) |
+| `estimated_hours` | string | Estimated hours | ⚠️ Does not work via API |
+| `daily_estimated_minutes` | string | Daily estimate | ⚠️ Does not work via API |
+| `status` | string | Task status | "to-do", "done", etc. |
+| `folder_id` | integer | Parent folder ID | Alternative to user_id |
+| `tag_ids` | array | Associated tag IDs | ⚠️ Tags not supported via API |
+| `created_at` | ISO 8601 | Creation timestamp | Read-only |
+| `updated_at` | ISO 8601 | Last update timestamp | Read-only |
+| `workspace_members` | array | Assigned member IDs | Read-only |
+| `estimate_type` | string | Estimate type | Defaults to "daily" |
+| `estimate_skips_weekend` | boolean | Skip weekends | Defaults to true |
+
+## Practical Implementation Notes
+
+### Token Management
+
+**Best Practice:** Cache tokens in a database (e.g., DuckDB) to avoid unnecessary authentication requests.
 
 ```python
-import httpx
-import time
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
-class RateLimitError(Exception):
-    pass
-
-@retry(
-    retry=retry_if_exception_type(RateLimitError),
-    wait=wait_exponential(multiplier=1, min=4, max=60),
-    stop=stop_after_attempt(5)
-)
-def make_api_request(url, headers):
-    response = httpx.get(url, headers=headers)
-    
-    if response.status_code == 429:
-        raise RateLimitError("Rate limit exceeded")
-    elif response.status_code == 402:
-        raise Exception("API quota exceeded - upgrade plan or wait for reset")
-    
-    response.raise_for_status()
-    return response.json()
-
-# Usage
-access_token = "<your_access_token>"
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": f"Bearer {access_token}"
+# Store tokens with expiration
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "expires_at": "2026-04-07T02:49:57"
 }
 
-try:
-    data = make_api_request(
-        "https://api.plan.toggl.com/api/v5/me",
-        headers
-    )
-    print(data)
-except Exception as e:
-    print(f"Error: {e}")
+# Check expiration before use (with 5-minute buffer)
+if datetime.now() < expires_at - timedelta(minutes=5):
+    use_cached_token()
+else:
+    refresh_token()
 ```
 
----
+### Task Linking Strategy
 
-## Error Handling
+Since custom fields are not supported, use the `notes` field with a marker pattern:
 
-### HTTP Status Codes
+```python
+def build_notes(description: str | None, external_id: str) -> str:
+    parts = []
+    if description:
+        parts.append(description)
+    parts.append(f"#anytype_id:{external_id}")
+    return "\n\n".join(parts)
 
-| Code | Description | Action |
-|------|-------------|--------|
-| `200` | OK - Success | - |
-| `204` | No Content - Success (no response body) | - |
-| `401` | Unauthorized | Check Authorization header |
-| `403` | Forbidden | User lacks permission for resource |
-| `404` | Not Found | Resource doesn't exist or unauthorized |
-| `422` | Unprocessable Entity | Invalid field values |
+# Extract ID from notes
+import re
+match = re.search(r'#anytype_id:(\S+)', notes)
+if match:
+    external_id = match.group(1)
+```
 
-### Error Response Format
+### Time Estimates
+
+**Working:**
+- `estimated_minutes`: Set as integer (e.g., 60 for 1 hour)
+
+**Not Working via API:**
+- `estimated_hours`: Always returns None
+- `daily_estimated_minutes`: Always returns None
+
+**Recommendation:** Use `estimated_minutes` for all time estimates.
+
+### Daily Scheduling
+
+Use `start_time` and `end_time` to define daily work windows:
 
 ```json
 {
+  "start_date": "2026-01-07",
+  "end_date": "2026-01-10",
+  "start_time": "08:00",
+  "end_time": "09:00"
+}
+```
+
+This creates a task spanning 4 days, scheduled 08:00-09:00 each day.
+
+### Tags
+
+**Status:** ⚠️ Tags are not supported via the API
+- No tags endpoint exists (`/tags` returns 404)
+- `tag_ids` field in task payload is ignored
+- `tag_ids` in response is always empty
+
+**Workaround:** Use projects for grouping instead of tags.
+
+### Required Fields for Task Creation
+
+**Minimum required:**
+```json
+{
+  "name": "Task Name",
+  "start_date": "2026-01-07",
+  "end_date": "2026-01-08",
+  "user_id": 7509708
+}
+```
+
+**Error if missing user_id:**
+```json
+{
   "errors": {
-    "email": ["format is invalid"],
-    "avatar_color": ["is not included in the list"]
+    "folder_id": ["can't be blank if no user or plan is assigned"]
   }
 }
 ```
 
----
+### Date Format
 
-## User Profile Endpoints
+**Correct:** `"2026-01-07"` (YYYY-MM-DD, date-only string)
 
-Manage user profile information.
+**Incorrect:** 
+- `"2026-01-07T00:00:00Z"` (ISO datetime)
+- `"2026-01-07T00:00:00.000000"` (datetime with microseconds)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v5/me` | **Get Profile** - Returns current user profile information. |
-| `PUT` | `/api/v5/me` | **Update Profile** - Update current user profile. |
+The API expects date-only strings, not datetime strings.
 
----
+### Time Format
 
-## Members Endpoints
+**Correct:** `"08:00"` (HH:MM, 24-hour format)
 
-Manage workspace members and invitations.
+**Examples:**
+- `"08:00"` = 8 AM
+- `"13:30"` = 1:30 PM
+- `"20:00"` = 8 PM
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v5/{workspace_id}/dummy_users` | **Add Member** - Add new member using name (not linked to existing user). |
-| `PUT` | `/api/v5/{workspace_id}/dummy_users/{member_id}` | **Update Unlinked Member** - Update member not yet linked with existing user. |
-| `GET` | `/api/v5/{workspace_id}/members` | **List Members** - Fetch list of workspace members. |
-| `GET` | `/api/v5/{workspace_id}/members/{member_id}` | **Get Member** - Get single member details. |
-| `PUT` | `/api/v5/{workspace_id}/members/{member_id}` | **Update Member** - Update member information. |
-| `DELETE` | `/api/v5/{workspace_id}/members/{member_id}` | **Remove Member** - Remove member from workspace. |
+## Rate Limits
 
----
+**Free Plan:** 30 requests/hour for organization endpoints (create/update)
 
-## Tasks Endpoints
+**Recommendation:** Implement retry logic with exponential backoff for 429 errors.
 
-Core task management functionality.
+## Error Handling
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v5/{workspace_id}/tasks/{filter}` | **List Tasks** - Fetch list of tasks with optional filters. |
-| `POST` | `/api/v5/{workspace_id}/tasks` | **Create Task** - Add a new task. |
-| `GET` | `/api/v5/{workspace_id}/tasks/{task_id}` | **Get Task** - Get single task details. |
-| `PUT` | `/api/v5/{workspace_id}/tasks/{task_id}` | **Update Task** - Update task information. |
-| `DELETE` | `/api/v5/{workspace_id}/tasks/{task_id}` | **Delete Task** - Remove a task. |
+### Common Errors
 
-### Task Filters
+| Status | Error | Solution |
+|--------|-------|----------|
+| 401 | Unauthorized | Check access token validity |
+| 404 | Not Found | Verify workspace_id and resource IDs |
+| 422 | Unprocessable Entity | Check required fields and date formats |
+| 429 | Too Many Requests | Implement rate limiting and retry logic |
 
-The `{filter}` parameter in list endpoint can be:
-- `timeline` - Tasks on the timeline
-- `backlog` - Tasks in backlog
-- (empty) - All tasks
+### Example Error Response
 
-### Task Query Parameters
+```json
+{
+  "errors": {
+    "folder_id": ["can't be blank if no user or plan is assigned"]
+  }
+}
+```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `since` | ISO 8601 | Only tasks after this date |
-| `until` | ISO 8601 | Only tasks before this date |
-| `users` | string | Filter by user IDs (timeline only) |
-| `project` | string | Filter by project ID |
-| `tasks` | string | Filter by task IDs |
-| `group` | string | Filter by group ID |
-| `tags` | string | Filter by tag IDs |
-
-### Task Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | integer | Task ID |
-| `name` | string | Task name |
-| `notes` | string | Task notes/description |
-| `start_date` | string | Start date (YYYY-MM-DD) |
-| `end_date` | string | End date (YYYY-MM-DD) |
-| `start_time` | string | Start time (HH:MM) |
-| `end_time` | string | End time (HH:MM) |
-| `color` | string | Color hex code |
-| `color_id` | integer | Color ID |
-| `estimated_hours` | string | Estimated hours |
-| `estimated_minutes` | string | Estimated minutes |
-| `status` | string | Task status (e.g., "done") |
-| `workspace_members` | array | Assigned member IDs |
-| `folder_id` | integer | Parent folder ID |
-| `tag_ids` | array | Associated tag IDs |
-| `position` | integer | Position in list |
-| `weight` | integer | Task weight |
-| `created_at` | ISO 8601 | Creation timestamp |
-| `updated_at` | ISO 8601 | Last update timestamp |
-
----
-
-## Projects Endpoints
-
-Project management functionality.
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v5/{workspace_id}/projects` | **List Projects** - Fetch list of projects. |
-| `POST` | `/api/v5/{workspace_id}/projects` | **Create Project** - Add a new project. |
-| `GET` | `/api/v5/{workspace_id}/projects/{project_id}` | **Get Project** - Get single project details. |
-| `PUT` | `/api/v5/{workspace_id}/projects/{project_id}` | **Update Project** - Update project information. |
-| `DELETE` | `/api/v5/{workspace_id}/projects/{project_id}` | **Delete Project** - Remove a project. |
-
----
-
-## Milestones Endpoints
-
-Milestone management for projects.
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v5/{workspace_id}/milestones` | **List Milestones** - Fetch list of milestones. |
-| `POST` | `/api/v5/{workspace_id}/milestones` | **Create Milestone** - Add a new milestone. |
-| `GET` | `/api/v5/{workspace_id}/milestones/{milestone_id}` | **Get Milestone** - Get single milestone details. |
-| `PUT` | `/api/v5/{workspace_id}/milestones/{milestone_id}` | **Update Milestone** - Update milestone information. |
-| `DELETE` | `/api/v5/{workspace_id}/milestones/{milestone_id}` | **Delete Milestone** - Remove a milestone. |
-
-### Milestone Query Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `since` | ISO 8601 | Only milestones after this date |
-| `until` | ISO 8601 | Only milestones before this date |
-| `projects` | string | Filter by project IDs |
-| `groups` | string | Filter by group IDs |
-
----
-
-## Groups Endpoints
-
-Group management for organizing members.
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v5/{workspace_id}/groups` | **List Groups** - Fetch list of groups. |
-| `POST` | `/api/v5/{workspace_id}/groups` | **Create Group** - Add a new group. |
-| `GET` | `/api/v5/{workspace_id}/groups/{group_id}` | **Get Group** - Get single group details. |
-| `PUT` | `/api/v5/{workspace_id}/groups/{group_id}` | **Update Group** - Update group information. |
-| `DELETE` | `/api/v5/{workspace_id}/groups/{group_id}` | **Delete Group** - Remove a group. |
-
-### Group Memberships
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v5/{workspace_id}/groups/{group_id}/memberships` | **List Memberships** - Fetch list of group memberships. |
-| `POST` | `/api/v5/{workspace_id}/groups/{group_id}/memberships` | **Add User to Group** - Add a user to the group. |
-| `DELETE` | `/api/v5/{workspace_id}/groups/{group_id}/memberships/{membership_id}` | **Remove Membership** - Remove user from group. |
-
----
-
-## HTTP Verbs
-
-Toggl Plan API uses standard HTTP verbs:
-
-| Verb | Usage |
-|------|-------|
-| `GET` | Retrieve resource(s) |
-| `POST` | Create new resource |
-| `PUT` | Update existing resource |
-| `DELETE` | Remove resource |
-
----
-
-## HTTP Redirects
-
-The API may use HTTP redirects. Clients should follow redirects automatically. The `Location` header will contain the URI to redirect to.
-
----
-
-## Example: Python Usage
+## Complete Example
 
 ```python
 import httpx
-from base64 import b64encode
+import base64
+from datetime import datetime, timedelta
 
-# OAuth 2.0 Bearer Token Authentication
-access_token = "<your_access_token>"
+# Authenticate
+credentials = f"{client_id}:{client_secret}"
+encoded = base64.b64encode(credentials.encode()).decode()
 
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": f"Bearer {access_token}"
+response = httpx.post(
+    "https://api.plan.toggl.com/api/v5/authenticate/token",
+    headers={
+        "Authorization": f"Basic {encoded}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    },
+    data={
+        "grant_type": "password",
+        "username": "user@example.com",
+        "password": "password",
+    },
+)
+token_data = response.json()
+access_token = token_data["access_token"]
+
+# Get user ID
+headers = {"Authorization": f"Bearer {access_token}"}
+profile = httpx.get("https://api.plan.toggl.com/api/v5/me", headers=headers).json()
+user_id = profile["id"]
+
+# Create task
+task_payload = {
+    "name": "Complete integration",
+    "notes": "Finish API integration\n\n#anytype_id:bafyreiabc123",
+    "start_date": "2026-01-07",
+    "end_date": "2026-01-08",
+    "start_time": "08:00",
+    "end_time": "09:00",
+    "user_id": user_id,
+    "project_id": 4393294,
+    "estimated_minutes": 60,
 }
 
-# Get current user profile
-response = httpx.get(
-    "https://api.plan.toggl.com/api/v5/me",
-    headers=headers
-)
-print(response.json())
-
-# Get tasks for workspace
-workspace_id = 12345
-response = httpx.get(
-    f"https://api.plan.toggl.com/api/v5/{workspace_id}/tasks/timeline",
-    headers=headers,
-    params={
-        "since": "2024-01-01",
-        "until": "2024-12-31"
-    }
-)
-print(response.json())
-
-# Create a new task
-response = httpx.post(
+task = httpx.post(
     f"https://api.plan.toggl.com/api/v5/{workspace_id}/tasks",
     headers=headers,
-    json={
-        "name": "New Task",
-        "notes": "Task description",
-        "start_date": "2024-01-01",
-        "end_date": "2024-01-05",
-        "estimated_hours": "8"
-    }
-)
-print(response.json())
+    json=task_payload,
+).json()
+
+print(f"Created task: {task['id']}")
 ```
 
----
+## Resources
 
-## Key Differences from Toggl Track
-
-| Feature | Toggl Track | Toggl Plan |
-|---------|-------------|------------|
-| **Purpose** | Time tracking | Project planning & task management |
-| **Main Resources** | Time entries, projects, clients | Tasks, projects, milestones, groups |
-| **Authentication** | API Token or OAuth 2.0 | OAuth 2.0 only |
-| **Base URL** | `api.track.toggl.com/api/v9` | `api.plan.toggl.com/api/v5` |
-| **Core Concept** | Time entries with duration | Tasks with dates and assignments |
-
----
-
-## Related Links
-
-- [Toggl Plan API Docs](https://developers.plan.toggl.com/api-v5.html)
-- [Toggl Plan Developer Portal](https://developers.plan.toggl.com/)
-- [Toggl Plan Support](https://support.plan.toggl.com)
-- [Toggl Plan Website](https://toggl.com/plan/)
+- [Official Toggl Plan API Documentation](https://developers.plan.toggl.com/api-v5.html)
+- [OAuth 2.0 Specification](https://oauth.net/2/)

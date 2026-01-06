@@ -93,9 +93,27 @@ class AnytypeClient:
             else:
                 status = "To Do"
 
-            # Extract toggl_id if exists
-            toggl_prop = next((p for p in props if p.get("key") == "toggl_id"), None)
-            toggl_id = toggl_prop.get("text") if toggl_prop else None
+            # Extract toggl_track_id if exists (renamed from toggl_id)
+            toggl_track_prop = next(
+                (p for p in props if p.get("key") == "toggl_track_id"), None
+            )
+            toggl_track_id = toggl_track_prop.get("text") if toggl_track_prop else None
+
+            # Extract toggl_plan_id if exists
+            toggl_plan_prop = next(
+                (p for p in props if p.get("key") == "toggl_plan_id"), None
+            )
+            toggl_plan_id = toggl_plan_prop.get("text") if toggl_plan_prop else None
+
+            # Extract start_date if exists
+            start_date_prop = next(
+                (p for p in props if p.get("key") == "start_date"), None
+            )
+            start_date = start_date_prop.get("date") if start_date_prop else None
+
+            # Extract end_date if exists
+            end_date_prop = next((p for p in props if p.get("key") == "end_date"), None)
+            end_date = end_date_prop.get("date") if end_date_prop else None
 
             # Extract last_modified_date
             modified_prop = next(
@@ -110,8 +128,11 @@ class AnytypeClient:
                     description=o.get("snippet"),
                     status=status,
                     project=project_name,
-                    toggl_id=toggl_id,
+                    toggl_track_id=toggl_track_id,
+                    toggl_plan_id=toggl_plan_id,
                     last_modified=last_modified,
+                    start_date=start_date,
+                    end_date=end_date,
                 )
             )
         return tasks

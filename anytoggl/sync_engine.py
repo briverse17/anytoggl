@@ -26,8 +26,8 @@ class SyncEngine:
                     project_id = self.toggl.create_project(task.project)
                     projects[task.project] = project_id
 
-            # Create in Toggl if no toggl_id exists
-            if not task.toggl_id:
+            # Create in Toggl if no toggl_track_id exists
+            if not task.toggl_track_id:
                 # Create a time entry for this task
                 # Use current time as start, duration=-1 for running timer if "In Progress"
                 now = datetime.now(timezone.utc).isoformat()
@@ -44,11 +44,13 @@ class SyncEngine:
                     payload["project_id"] = project_id
 
                 toggl_entry = self.toggl.create_time_entry(payload)
-                self.anytype.update_task(task.id, {"toggl_id": str(toggl_entry.id)})
+                self.anytype.update_task(
+                    task.id, {"toggl_track_id": str(toggl_entry.id)}
+                )
                 continue
 
             # Update flow - check if entry exists in Toggl
-            toggl_entry = toggl_by_id.get(task.toggl_id)
+            toggl_entry = toggl_by_id.get(task.toggl_track_id)
             if not toggl_entry:
                 continue
 
